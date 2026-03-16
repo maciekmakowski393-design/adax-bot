@@ -7,7 +7,7 @@ import os
 import re
 from datetime import datetime, timedelta
 
-TOKEN = "MTQ4MjM1NjA4ODY2OTA3NzY1NQ.Gjr-TY.UZjNc_lo7FS78Y5wcNKnXLIOXgMms7Ittw1PzQ"
+TOKEN = os.getenv("TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
