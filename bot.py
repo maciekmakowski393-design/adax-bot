@@ -8,6 +8,22 @@ import re
 from datetime import datetime, timedelta
 
 TOKEN = os.getenv("TOKEN")
+from aiohttp import web
+import threading
+import asyncio
+
+# Prostym serwer HTTP, który będzie działał w tle
+async def hello(request):
+    return web.Response(text="Bot is running!")
+
+def run_http_server():
+    app = web.Application()
+    app.router.add_get('/', hello)
+    # Uruchom serwer na porcie 10000, którego oczekuje Render
+    web.run_app(app, host='0.0.0.0', port=10000)
+
+# Uruchom serwer w osobnym wątku, aby nie blokował głównego wątku bota
+threading.Thread(target=run_http_server, daemon=True).start()
 
 intents = discord.Intents.default()
 intents.message_content = True
