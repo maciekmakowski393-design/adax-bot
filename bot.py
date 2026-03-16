@@ -7,31 +7,38 @@ import os
 import re
 from datetime import datetime, timedelta
 
+# ================== TOKEN ZE ZMIENNYCH ŚRODOWISKOWYCH ==================
 TOKEN = os.getenv("TOKEN")
+
+# ================== PROSTY SERWER HTTP (BEZ BŁĘDÓW) ==================
+# Ten serwer działa w tle i otwiera port, aby Render był zadowolony.
+# Używamy asyncio i aiohttp w bezpieczny sposób.
+import asyncio
 from aiohttp import web
 import threading
-import asyncio
 
-# Prostym serwer HTTP, który będzie działał w tle
-async def hello(request):
+async def handle(request):
     return web.Response(text="Bot is running!")
 
 def run_http_server():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     app = web.Application()
-    app.router.add_get('/', hello)
-    # Uruchom serwer na porcie 10000, którego oczekuje Render
+    app.router.add_get('/', handle)
     web.run_app(app, host='0.0.0.0', port=10000)
 
-# Uruchom serwer w osobnym wątku, aby nie blokował głównego wątku bota
-threading.Thread(target=run_http_server, daemon=True).start()
+# Uruchamiamy serwer w osobnym wątku
+thread = threading.Thread(target=run_http_server, daemon=True)
+thread.start()
 
+# ================== INTENCJE I BOT ==================
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.guilds = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# LISTA SERWERÓW (tylko te dwa)
+# LISTA SERWERÓW (dodaj tutaj ID swoich serwerów)
 SERWERY = [
     discord.Object(id=1479710460877078538),
     discord.Object(id=1478454030538637363)
@@ -41,43 +48,20 @@ SERWERY = [
 GIVEAWAY_FILE = "giveaways.json"
 TICKETS_FILE = "tickets.json"
 CUSTOM_STATUS_FILE = "custom_status.json"
-WELCOME_CONFIG_FILE = "welcome_config.json"   # dla wejść
-GOODBYE_CONFIG_FILE = "goodbye_config.json"   # dla wyjść (nowy plik)
+WELCOME_CONFIG_FILE = "welcome_config.json"
+GOODBYE_CONFIG_FILE = "goodbye_config.json"
 
-# Wczytywanie giveaway
-if os.path.exists(GIVEAWAY_FILE):
-    with open(GIVEAWAY_FILE, "r", encoding="utf-8") as f:
-        active_giveaways = json.load(f)
-else:
-    active_giveaways = {"next_id": 1, "giveaways": {}}
+def load_json(file, default):
+    if os.path.exists(file):
+        with open(file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return default
 
-# Wczytywanie ticketów
-if os.path.exists(TICKETS_FILE):
-    with open(TICKETS_FILE, "r", encoding="utf-8") as f:
-        tickets_data = json.load(f)
-else:
-    tickets_data = {}
-
-# Wczytywanie statusów
-if os.path.exists(CUSTOM_STATUS_FILE):
-    with open(CUSTOM_STATUS_FILE, "r", encoding="utf-8") as f:
-        custom_status = json.load(f)
-else:
-    custom_status = {}
-
-# Wczytywanie konfiguracji kanału powitalnego
-if os.path.exists(WELCOME_CONFIG_FILE):
-    with open(WELCOME_CONFIG_FILE, "r", encoding="utf-8") as f:
-        welcome_config = json.load(f)
-else:
-    welcome_config = {}  # { "guild_id": channel_id }
-
-# Wczytywanie konfiguracji kanału pożegnalnego
-if os.path.exists(GOODBYE_CONFIG_FILE):
-    with open(GOODBYE_CONFIG_FILE, "r", encoding="utf-8") as f:
-        goodbye_config = json.load(f)
-else:
-    goodbye_config = {}  # { "guild_id": channel_id }
+active_giveaways = load_json(GIVEAWAY_FILE, {"next_id": 1, "giveaways": {}})
+tickets_data = load_json(TICKETS_FILE, {})
+custom_status = load_json(CUSTOM_STATUS_FILE, {})
+welcome_config = load_json(WELCOME_CONFIG_FILE, {})
+goodbye_config = load_json(GOODBYE_CONFIG_FILE, {})
 
 invite_cache = {}
 
@@ -132,7 +116,6 @@ async def on_ready():
 
 @bot.event
 async def on_member_join(member):
-    # Automatyczne powitanie na kanale ustawionym przez /setcount
     guild_id = str(member.guild.id)
     channel_id = welcome_config.get(guild_id)
     if channel_id:
@@ -143,7 +126,6 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_remove(member):
-    # Automatyczne pożegnanie na kanale ustawionym przez /odlotyset
     guild_id = str(member.guild.id)
     channel_id = goodbye_config.get(guild_id)
     if channel_id:
@@ -157,28 +139,6 @@ async def on_member_remove(member):
             embed.set_thumbnail(url=member.display_avatar.url)
             embed.set_footer(text="Żegnamy")
             await channel.send(embed=embed)
-
-# ================== KOMENDA /setcount ==================
-@bot.tree.command(name="setcount", description="🔧 Ustawia kanał powitalny (gdzie bot wita nowych użytkowników)")
-async def setcount(interaction: discord.Interaction, kanał: discord.TextChannel):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Tylko administrator może użyć tej komendy!", ephemeral=True)
-        return
-    guild_id = str(interaction.guild.id)
-    welcome_config[guild_id] = str(kanał.id)
-    save_welcome_config()
-    await interaction.response.send_message(f"✅ Kanał powitalny ustawiony na {kanał.mention}", ephemeral=True)
-
-# ================== NOWA KOMENDA /odlotyset ==================
-@bot.tree.command(name="odlotyset", description="🔧 Ustawia kanał pożegnalny (gdzie bot żegna opuszczających)")
-async def odlotyset(interaction: discord.Interaction, kanał: discord.TextChannel):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Tylko administrator może użyć tej komendy!", ephemeral=True)
-        return
-    guild_id = str(interaction.guild.id)
-    goodbye_config[guild_id] = str(kanał.id)
-    save_goodbye_config()
-    await interaction.response.send_message(f"✅ Kanał pożegnalny ustawiony na {kanał.mention}", ephemeral=True)
 
 # ================== AUTOMATYCZNE ODPOWIEDZI ==================
 @bot.event
@@ -852,6 +812,27 @@ async def show_status(interaction: discord.Interaction):
     embed.set_footer(text=f"Wywołane przez {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
+# ================== KOMENDA PRZYLOTY / ODLOTY ==================
+@bot.tree.command(name="przyloty", description="🔧 Ustawia kanał powitalny (gdzie bot wita nowych użytkowników)")
+async def przyloty(interaction: discord.Interaction, kanał: discord.TextChannel):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Tylko administrator może użyć tej komendy!", ephemeral=True)
+        return
+    guild_id = str(interaction.guild.id)
+    welcome_config[guild_id] = str(kanał.id)
+    save_welcome_config()
+    await interaction.response.send_message(f"✅ Kanał powitalny ustawiony na {kanał.mention}", ephemeral=True)
+
+@bot.tree.command(name="odloty", description="🔧 Ustawia kanał pożegnalny (gdzie bot żegna opuszczających)")
+async def odloty(interaction: discord.Interaction, kanał: discord.TextChannel):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Tylko administrator może użyć tej komendy!", ephemeral=True)
+        return
+    guild_id = str(interaction.guild.id)
+    goodbye_config[guild_id] = str(kanał.id)
+    save_goodbye_config()
+    await interaction.response.send_message(f"✅ Kanał pożegnalny ustawiony na {kanał.mention}", ephemeral=True)
+
 # ================== KOMENDA PREFIKSOWA !gi ==================
 @bot.command(name="gi")
 async def gi(ctx):
@@ -866,7 +847,7 @@ async def gi(ctx):
     embed.add_field(name="📊 Invites", value="`/invites` – Check invites\n`/topinvites` – Top 10 inviters\n`/usunzaproszenia` – Delete user's invites\n`/usunwszystkiezaproszenia` – Delete all invites", inline=False)
     embed.add_field(name="📝 Fun", value="`/fakemessage` – Send a fake message\n`/typein` – Send a message as bot\n`/changekanal` – Change all text channel names\n`/announce` – Announce to all channels (max 100 repeats)", inline=False)
     embed.add_field(name="📌 Custom Status", value="`/setstatus1 <user> <jestem/nie ma> <opis>` – Set first status\n`/setstatus2 <user> <jestem/nie ma> <opis>` – Set second status\n`/editstatus <user> <1/2> <jestem/nie ma> <opis>` – Edit existing status\n`/status` – Show all custom statuses", inline=False)
-    embed.add_field(name="📌 Welcome/Goodbye", value="`/setcount #kanał` – Ustawia kanał powitalny\n`/odlotyset #kanał` – Ustawia kanał pożegnalny", inline=False)
+    embed.add_field(name="📌 Welcome/Goodbye", value="`/przyloty #kanał` – Ustawia kanał powitalny\n`/odloty #kanał` – Ustawia kanał pożegnalny", inline=False)
     embed.add_field(name="💬 Auto-responses", value="Words like `dupa`, `adax`, `doner`, `ania`, `luki`, `co`, `essa`, `bambik`, `spierdalaj`, `elo`, `pachołek`, `panto`, `szczeka` trigger funny replies with mention!", inline=False)
     embed.set_footer(text="Bot made with ❤️ by Adax_nrg")
     await ctx.send(embed=embed)
